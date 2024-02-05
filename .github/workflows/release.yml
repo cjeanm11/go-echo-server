@@ -1,5 +1,4 @@
-name: goreleaser
-
+name: release-rc
 on:
   push:
     tags:
@@ -9,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  release-rc:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -24,3 +24,7 @@ tmp/
 
 # .env file
 .env
+
+# others bro.
+.idea/
+.history/

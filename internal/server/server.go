@@ -17,16 +17,14 @@ type Server struct {
 	httpServer *http.Server
 }
 
-// Option is a function that configures the server.
 type Option func(*Server)
 
 func NewServer(options ...Option) *Server {
 	s := &Server{
-		port: 8080, // Default port
+		port: loadPortFromEnv(), 
 		db:   database.New(),
 	}
 
-	// Override defaults with any specified options
 	for _, option := range options {
 		option(s)
 	}
@@ -35,21 +33,18 @@ func NewServer(options ...Option) *Server {
 	return s
 }
 
-// WithPort is an Option to configure the server port.
 func WithPort(port int) Option {
 	return func(s *Server) {
 		s.port = port
 	}
 }
 
-// WithDatabaseService is an Option to configure the database service.
 func WithDatabaseService(db database.Service) Option {
 	return func(s *Server) {
 		s.db = db
 	}
 }
 
-// initHTTPServer initializes the *http.Server with the Server's configuration.
 func (s *Server) initHTTPServer() {
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
@@ -60,19 +55,26 @@ func (s *Server) initHTTPServer() {
 	}
 }
 
-// Start runs the server, logging any errors encountered.
 func (s *Server) Start() {
+	s.db = database.New()
+	defer func() {
+		// graceful shutdown
+		if err := s.db.Close(); err != nil {
+			log.Println("Error closing database connection:", err)
+		}
+	}()
+
 	log.Printf("Server starting on port %d\n", s.port)
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+
 }
 
-// loadPortFromEnv tries to load the server port from an environment variable, falling back to a default if not found or invalid.
 func loadPortFromEnv() int {
 	portStr, exists := os.LookupEnv("PORT")
 	if !exists {
-		return 8080 // Return default port if not set
+		return 8080 
 	}
 
 	port, err := strconv.Atoi(portStr)

@@ -1,8 +1,5 @@
 # Simple Makefile for a Go project
 
-# Build the application
-all: build
-
 build:
 	@echo "Building..."
 	

@@ -1,10 +1,11 @@
 package main
 
 import (
-	"server-template/internal/server"
+	srv "server-template/internal/server"
 )
 
 func main() {
-	srv := server.NewServer()
-	srv.Start()
+	option := srv.Option(srv.WithPort(8081));
+	server := srv.NewServer(option)
+	server.Start()
 }
