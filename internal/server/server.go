@@ -85,3 +85,12 @@ func loadPortFromEnv() int {
 
 	return port
 }
+
+
+func GetPortOrDefault(defaultPort int) int {
+	port, err := strconv.Atoi(os.Getenv("PORT"))
+	if err != nil {
+		return defaultPort
+	}
+	return port
+}

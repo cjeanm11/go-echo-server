@@ -5,7 +5,7 @@ import (
 )
 
 func main() {
-	option := srv.Option(srv.WithPort(8081));
-	server := srv.NewServer(option)
+	port := srv.GetPortOrDefault(8081)
+	server := srv.NewServer(srv.WithPort(port))
 	server.Start()
 }
