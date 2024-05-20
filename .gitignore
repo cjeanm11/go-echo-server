@@ -28,3 +28,7 @@ tmp/
 # others bro.
 .idea/
 .history/
+
+# cert files
+.cert/*
+!.cert/.gitkeep
