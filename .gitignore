@@ -32,3 +32,6 @@ tmp/
 # cert files
 .cert/*
 !.cert/.gitkeep
+
+# logging
+app.log

@@ -8,11 +8,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"server-template/internal/database"
 	"strconv"
 	"sync"
 	"time"
-	"server-template/internal/database"
 
+	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -27,13 +28,13 @@ type FixedSizeKey [4]byte
 
 type Server struct {
 	port       int
+	domain     string
 	db         database.Service
 	lock       sync.Mutex
 	lockedKeys map[FixedSizeKey]struct{}
-	uploadids  map[string]bool
 	httpServer *http.Server
 	grpcServer *grpc.Server
-	useTLS 	   bool
+	useTLS     bool
 }
 
 type Option func(*Server)
@@ -43,7 +44,7 @@ func NewServer(options ...Option) *Server {
 		port:       loadPortFromEnv(),
 		lock:       sync.Mutex{},
 		lockedKeys: map[FixedSizeKey]struct{}{},
-		useTLS: 	false,
+		useTLS:     false,
 	}
 	for _, option := range options {
 		option(s)
@@ -57,14 +58,14 @@ func NewServer(options ...Option) *Server {
 
 func (s *Server) initHTTPServer() {
 	var cred *tls.Config = nil
-	
+
 	if s.useTLS {
 		cred = loadTLSCertificate(certFile, keyFile)
 	}
 
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
-		Handler:      s.RegisterRoutes(), 
+		Handler:      s.RegisterRoutes(),
 		IdleTimeout:  1 * time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -73,34 +74,54 @@ func (s *Server) initHTTPServer() {
 
 }
 
+func loadTLSCertificate(certFile, keyFile string) *tls.Config {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		log.Fatalf("failed to load server certificate: %v", err)
+	}
 
-func loadTLSCertificate(certFile, keyFile string) (*tls.Config) {
-    cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-    if err != nil {
-        log.Fatalf("failed to load server certificate: %v", err)
-    }
+	certPool := x509.NewCertPool()
+	certBytes, err := os.ReadFile(certFile)
+	if err != nil {
+		log.Fatalf("failed to read server certificate: %v", err)
+	}
+	certPool.AppendCertsFromPEM(certBytes)
 
-    certPool := x509.NewCertPool()
-    certBytes, err := os.ReadFile(certFile)
-    if err != nil {
-        log.Fatalf("failed to read server certificate: %v", err)
-    }
-    certPool.AppendCertsFromPEM(certBytes)
-
-    return &tls.Config{
-        Certificates: []tls.Certificate{cert},
-        ClientAuth:   tls.NoClientCert,
-        ClientCAs:    certPool,
-    }
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.NoClientCert,
+		ClientCAs:    certPool,
+	}
 }
+
+func GetTLSConfig(domain string) *tls.Config {
+	m := autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(domain),
+		Cache:      autocert.DirCache("./" + domain),
+	}
+
+	return &tls.Config{
+		PreferServerCipherSuites: true,
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		MinVersion:            tls.VersionTLS13,
+		CipherSuites: []uint16{
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_AES_128_GCM_SHA256,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
+		},
+		GetCertificate: m.GetCertificate,
+	}
+}
+
 
 func (s *Server) initGRPCServer() {
 	var opts []grpc.ServerOption
 
-    if s.useTLS {
+	if s.useTLS {
 		creds := loadTLSCertificate(certFile, keyFile)
-        opts = append(opts, grpc.Creds(credentials.NewTLS(creds)))
-    } 
+		opts = append(opts, grpc.Creds(credentials.NewTLS(creds)))
+	}
 
 	opts = append(opts, grpc.ConnectionTimeout(time.Second))
 	opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
@@ -109,10 +130,10 @@ func (s *Server) initGRPCServer() {
 	}))
 	opts = append(opts, grpc.KeepaliveEnforcementPolicy(
 		keepalive.EnforcementPolicy{
-				MinTime:             time.Second,
-				PermitWithoutStream: true,
-			},
-		),
+			MinTime:             time.Second,
+			PermitWithoutStream: true,
+		},
+	),
 	)
 	opts = append(opts, grpc.MaxConcurrentStreams(5))
 
@@ -184,25 +205,25 @@ func GetPortOrDefault(defaultPort int) int {
 	return port
 }
 
-func (a *Server) unlockKey(key []byte) {
+func (a *Server) UnlockKey(key []byte) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
 	var keyToCheck FixedSizeKey
-	copy(keyToCheck[:], key) 
+	copy(keyToCheck[:], key)
 	delete(a.lockedKeys, keyToCheck)
 }
 
-func (a *Server) lockKey(key []byte) bool {
+func (a *Server) UockKey(key []byte) bool {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
 	var keyToCheck FixedSizeKey
-	copy(keyToCheck[:], key) 
+	copy(keyToCheck[:], key)
 
 	_, ok := a.lockedKeys[keyToCheck]
 	if ok {
-		return false 
+		return false
 	}
 	a.lockedKeys[keyToCheck] = struct{}{}
 	return true
@@ -220,3 +241,9 @@ func WithTSL(useTSL bool) Option {
 		s.useTLS = useTSL
 	}
 }
+func WithDomain(domain string) Option {
+	return func(s *Server) {
+		s.domain = domain
+	}
+}
+
