@@ -5,69 +5,77 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
+	"github.com/go-redis/redis/v8" 
 	_ "github.com/joho/godotenv/autoload"
+	"github.com/golang-migrate/migrate/v4"
+    _ "github.com/golang-migrate/migrate/v4/database/pgx"
+    _ "github.com/golang-migrate/migrate/v4/database/postgres" 
+    _ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/lib/pq"	
+	_ "database/sql"
+	"server-template/pkg/util"
 )
 
-type Service interface {
-	Health() map[string]string
-	AddUser(username string, email string) map[string]string
-	Close() error
-}
+var (
+	database  = util.GetEnvOrDefault("DB_DATABASE","postgres")
+	password  = util.GetEnvOrDefault("DB_PASSWORD", "postgres")
+	username  = util.GetEnvOrDefault("DB_USERNAME", "")
+	port      = util.GetEnvOrDefault("DB_PORT","5432")
+	host      = util.GetEnvOrDefault("DB_HOST","localhost")
+)
 
-type service struct {
+type Service struct {
 	db *sql.DB
+	redis *redis.Client 
 }
 
-func New() Service {
-	database := os.Getenv("DB_DATABASE")
-	password := os.Getenv("DB_PASSWORD")
-	username := os.Getenv("DB_USERNAME")
-	port := os.Getenv("DB_PORT")
-	host := os.Getenv("DB_HOST")
+func MigrateDatabase(connStr string) error {
+    m, err := migrate.New("file://db/migrations", connStr)
+    if err != nil {
+        return fmt.Errorf("failed to create migration instance: %w", err)
+    }
+    if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+        return fmt.Errorf("failed to run migrations: %w", err)
+    }
+    return nil
+}
 
+func New() *Service {
+
+	
+	// Postgres Connection
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", username, password, host, port, database)
-
 	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		log.Fatalf("Failed to open database connection: %v", err)
 	}
+	
+    // Redis Connection
+    redisClient := redis.NewClient(&redis.Options{
+        Addr:     "localhost:6379", 
+        Password: "",               
+        DB:       0,                
+    })
 
-	return &service{db: db}
+    // database Migration
+    if err := MigrateDatabase(connStr); err != nil {
+ 	  	log.Fatalf("Failed database migration: %v", err)
+    }
+
+	return &Service{db: db, redis: redisClient}
 }
 
-func (s *service) Close() error {
+func (s *Service) Close() error {
 	if s.db != nil {
 		return s.db.Close()
 	}
 	return nil
 }
 
-func (s *service) AddUser(username string, email string) map[string]string {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
-	stmt, err := s.db.PrepareContext(ctx, "INSERT INTO users (username, email) VALUES ($1, $2) RETURNING id")
-	if err != nil {
-		return map[string]string{"error": err.Error()}
-	}
-
-	var userID int
-	err = stmt.QueryRowContext(ctx, username, email).Scan(&userID)
-	if err != nil {
-		return map[string]string{"error": err.Error()}
-	}
-
-	defer stmt.Close()
-
-	return map[string]string{
-		"message": "User added successfully",
-		"user_id": fmt.Sprintf("%d", userID),
-	}
-}
-func (s *service) Health() map[string]string {
+func (s *Service) Health() map[string]string {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 

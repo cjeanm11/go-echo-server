@@ -32,26 +32,6 @@ test: clean build
 	@echo "Testing..."
 	@go test ./tests -v
 
-# Clean the binary
-clean: clear-cert
-	@echo "Cleaning..."
-	@rm -f main
-
-# Generate Self-Signed Certificates (local development only)
-gen-cert:
-	@echo "Generating self-signed certificates..."
-	@if ! command -v openssl > /dev/null; then \
-	    echo "Error: OpenSSL is not installed. Please install OpenSSL to generate certificates."; \
-	    exit 1; \
-	fi
-	@openssl req -x509 -newkey rsa:4096 -keyout .cert/server.key \
-		-out .cert/server.crt -nodes -days 365 \
-		-subj '/CN=localhost'
-	@echo "Certificates generated successfully."
-
-clear-cert:
-	@echo "Removing generated certificates..."
-	@rm -f .cert/*
 
 # Live Reload
 watch:
@@ -70,4 +50,4 @@ watch:
 	    fi; \
 	fi
 
-.PHONY: all build run test gen-cert clear-cert clean
+.PHONY: all build run test clean

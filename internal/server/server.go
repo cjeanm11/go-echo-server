@@ -1,28 +1,21 @@
 package server
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"server-template/internal/database"
 	"strconv"
 	"sync"
 	"time"
-
-	"golang.org/x/crypto/acme/autocert"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc"
+	"server-template/pkg/util"
 )
 
-const (
-	certFile string = ".cert/server.crt"
-	keyFile  string = ".cert/server.key"
+var (
+	portNumber = util.GetEnvOrDefault("PORT","8080")
 )
 
 type FixedSizeKey [4]byte
@@ -30,13 +23,13 @@ type FixedSizeKey [4]byte
 type Server struct {
 	port       int
 	domain     string
-	db         database.Service
+	db         *database.Service
 	lock       sync.Mutex
 	lockedKeys map[FixedSizeKey]struct{}
 	httpServer *http.Server
 	grpcServer *grpc.Server
-	useTLS     bool
 }
+
 
 type Option func(*Server)
 
@@ -45,24 +38,19 @@ func NewServer(options ...Option) *Server {
 		port:       loadPortFromEnv(),
 		lock:       sync.Mutex{},
 		lockedKeys: map[FixedSizeKey]struct{}{},
-		useTLS:     false,
+		db : database.New(),
 	}
 	for _, option := range options {
 		option(s)
 	}
 
 	s.initHTTPServer()
-	s.initGRPCServer() // Initialize gRPC server
+	s.initGRPCServer() 
 
 	return s
 }
 
 func (s *Server) initHTTPServer() {
-	var cred *tls.Config = nil
-
-	if s.useTLS {
-		cred = loadTLSCertificate(certFile, keyFile)
-	}
 
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
@@ -70,63 +58,11 @@ func (s *Server) initHTTPServer() {
 		IdleTimeout:  1 * time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
-		TLSConfig:    cred,
-	}
-
-}
-
-func loadTLSCertificate(certFile, keyFile string) *tls.Config {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		log.Fatalf("failed to load server certificate: %v", err)
-	}
-
-	certPool := x509.NewCertPool()
-	certFilePath := filepath.Clean(certFile)
-	certBytes, err := os.ReadFile(certFilePath)
-	if err != nil {
-		panic(err)
-	}
-	if !certPool.AppendCertsFromPEM(certBytes) {
-        panic("failed to append certs from PEM")
-    }
-
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.NoClientCert,
-		ClientCAs:    certPool,
-		MinVersion:   tls.VersionTLS12,
 	}
 }
-
-func GetTLSConfig(domain string) *tls.Config {
-	m := autocert.Manager{
-		Prompt:     autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist(domain),
-		Cache:      autocert.DirCache("./" + domain),
-	}
-
-	return &tls.Config{
-		PreferServerCipherSuites: true,
-		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP521, tls.CurveP384, tls.CurveP256},
-		MinVersion:            tls.VersionTLS13,
-		CipherSuites: []uint16{
-			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_CHACHA20_POLY1305_SHA256,
-		},
-		GetCertificate: m.GetCertificate,
-	}
-}
-
 
 func (s *Server) initGRPCServer() {
 	var opts []grpc.ServerOption
-
-	if s.useTLS {
-		creds := loadTLSCertificate(certFile, keyFile)
-		opts = append(opts, grpc.Creds(credentials.NewTLS(creds)))
-	}
 
 	opts = append(opts, grpc.ConnectionTimeout(time.Second))
 	opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
@@ -167,11 +103,7 @@ func (s *Server) startHTTPServer(wg *sync.WaitGroup) {
 	log.Printf("HTTP server starting on port %d\n", s.port)
 
 	var err error
-	if s.useTLS {
-		err = s.httpServer.ListenAndServeTLS("", "")
-	} else {
-		err = s.httpServer.ListenAndServe()
-	}
+	err = s.httpServer.ListenAndServe()
 
 	if err != nil && err != http.ErrServerClosed {
 		log.Fatalf("HTTP server failed to start on %s: %v", addr, err)
@@ -190,25 +122,14 @@ func (s *Server) Start() {
 }
 
 func loadPortFromEnv() int {
-	portStr, exists := os.LookupEnv("PORT")
-	if !exists {
-		return 8080
-	}
-	port, err := strconv.Atoi(portStr)
+	port, err := strconv.Atoi(portNumber)
 	if err != nil {
-		log.Printf("Warning: Invalid PORT environment variable '%s', falling back to default port 8080.\n", portStr)
+		log.Printf("Warning: Invalid PORT environment variable '%s', falling back to default port 8080.\n", portNumber)
 		return 8080
 	}
 	return port
 }
 
-func GetPortOrDefault(defaultPort int) int {
-	port, err := strconv.Atoi(os.Getenv("PORT"))
-	if err != nil {
-		return defaultPort
-	}
-	return port
-}
 
 func (a *Server) UnlockKey(key []byte) {
 	a.lock.Lock()
@@ -219,7 +140,7 @@ func (a *Server) UnlockKey(key []byte) {
 	delete(a.lockedKeys, keyToCheck)
 }
 
-func (a *Server) UockKey(key []byte) bool {
+func (a *Server) LockKey(key []byte) bool {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
@@ -241,11 +162,6 @@ func WithPort(port int) Option {
 	}
 }
 
-func WithTSL(useTSL bool) Option {
-	return func(s *Server) {
-		s.useTLS = useTSL
-	}
-}
 func WithDomain(domain string) Option {
 	return func(s *Server) {
 		s.domain = domain
