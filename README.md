@@ -1,6 +1,6 @@
 ## Secure Server Template
 
-My personal server setup based on go-blueprints. The Server setup manages HTTP and gRPC servers with optional TLS configurations.
+This repository provides a template for developing secure Go web applications and gRPC services. It incorporates essential middleware and configurations aimed at enhancing security, mitigating common web vulnerabilities, and ensuring server stability.
 
 ### Features
 - Go web framework: [Echo](https://github.com/labstack/echo)
@@ -28,3 +28,11 @@ My personal server setup based on go-blueprints. The Server setup manages HTTP a
 - **Clean**: `make clean`
 - **Certs**: `make gen-cert, make clear-cert`
 - **Live Reload**: `make watch`
+
+### Contribution
+
+Contributions, bug reports, and feature requests are welcome! Feel free to submit pull requests or open issues to contribute to the project's development and improvement.
+
+### License
+
+This project is licensed under the MIT License, allowing for free and open-source use, modification, and distribution.
