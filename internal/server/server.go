@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"server-template/internal/database"
 	"strconv"
 	"sync"
@@ -81,16 +82,20 @@ func loadTLSCertificate(certFile, keyFile string) *tls.Config {
 	}
 
 	certPool := x509.NewCertPool()
-	certBytes, err := os.ReadFile(certFile)
+	certFilePath := filepath.Clean(certFile)
+	certBytes, err := os.ReadFile(certFilePath)
 	if err != nil {
-		log.Fatalf("failed to read server certificate: %v", err)
+		panic(err)
 	}
-	certPool.AppendCertsFromPEM(certBytes)
+	if !certPool.AppendCertsFromPEM(certBytes) {
+        panic("failed to append certs from PEM")
+    }
 
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.NoClientCert,
 		ClientCAs:    certPool,
+		MinVersion:   tls.VersionTLS12,
 	}
 }
 
