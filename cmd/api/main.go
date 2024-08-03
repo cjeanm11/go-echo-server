@@ -4,7 +4,6 @@ import (
 	"log"
 	srv "server-template/internal/server"
 	"github.com/joho/godotenv"
-	"os"
 )
 
 func main() {
