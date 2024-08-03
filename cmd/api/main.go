@@ -7,8 +7,9 @@ import (
 	"os"
 )
 
-func init() {
-    if err := godotenv.Load(".env-dev", ".env"); err != nil {
+func main() {
+
+	 if err := godotenv.Load(".env-dev", ".env"); err != nil {
         log.Fatalf("Failed to load env variables: %v", err)
     }
 	logFile, err := os.OpenFile("./app.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0600)
@@ -17,9 +18,7 @@ func init() {
 	}
 	defer logFile.Close()
 	log.SetOutput(logFile)
-}
-
-func main() {
+	
 	log.Println("Application started")
 	server := srv.NewServer(srv.WithPort(8080))
 	server.Start()
